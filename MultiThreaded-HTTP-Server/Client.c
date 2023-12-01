@@ -1,6 +1,6 @@
 #include <stdio.h>
 
 int main() {
-    printf("client");
+    printf("semooooooooooooooooooooooooooooooooooooo");
     return 0;
 }
