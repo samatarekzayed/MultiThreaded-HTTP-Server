@@ -12,67 +12,7 @@
 
 const int BUFFER_SIZE = 1024;
 
-// void handleClient(int clientSocket) {
-//     char buffer[BUFFER_SIZE];
-//     memset(buffer, 0, BUFFER_SIZE);
 
-//     // Receive the HTTP request from the client
-//     recv(clientSocket, buffer, BUFFER_SIZE, 0);
-//     std::string request(buffer);
-
-//     // Extract the HTTP method (GET or POST) and requested file
-//     std::istringstream iss(request);
-//     std::string method, filename;
-//     iss >> method >> filename;
-
-//     // Handle GET request
-//     // if (method == "GET") {
-//     //     std::ifstream file(filename, std::ios::binary);
-//     //     if (file) {
-//     //         // File exists, send HTTP 200 OK and the file content
-//     //         std::string response = "HTTP/1.1 200 OK\r\n\r\n";
-//     //         send(clientSocket, response.c_str(), response.size(), 0);
-
-//     //         while (!file.eof()) {
-//     //             file.read(buffer, BUFFER_SIZE);
-//     //             send(clientSocket, buffer, file.gcount(), 0);
-//     //         }
-//     //     } else {
-//     //         // File not found, send HTTP 404 Not Found
-//     //         std::cout << "Requested File: " << filename << std::endl;
-//     //         std::string response = "HTTP/1.1 40 Not Found\r\n\r\n";
-//     //         send(clientSocket, response.c_str(), response.size(), 0);
-//     //     }
-//     // }
-//     if (method == "GET") {
-//     // Concatenate the requested filename with the current directory
-//     std::string fullFilePath = "./" + filename;
-
-//     std::ifstream file(fullFilePath, std::ios::binary);
-//     if (file) {
-//         // File exists, send HTTP 200 OK and the file content
-//         std::string response = "HTTP/1.1 200 OK\r\n\r\n";
-//         send(clientSocket, response.c_str(), response.size(), 0);
-
-//         while (!file.eof()) {
-//             file.read(buffer, BUFFER_SIZE);
-//             send(clientSocket, buffer, file.gcount(), 0);
-//         }
-//     } else {
-//         // File not found, send HTTP 404 Not Found
-//         std::cout << "Requested File: " << fullFilePath << std::endl;
-//         // std::string response = "HTTP/1.1 40 Not Found\r\n\r\n";
-//         std::string response = fullFilePath;
-//         send(clientSocket, response.c_str(), response.size(), 0);
-//     }
-// }
-
-
-//     // Handle POST request (if needed)
-
-//     // Close the client socket
-//     close(clientSocket);
-// }
 
 
 void handleClient(int clientSocket) {

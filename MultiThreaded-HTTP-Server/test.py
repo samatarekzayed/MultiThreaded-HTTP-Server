@@ -37,10 +37,10 @@ if __name__ == '__main__':
     #// g++ -o Server Server.cpp -pthread
     #cd MultiThreaded-HTTP-Server
     # Sending a GET request
-    # make_request(host, port, 'GET', '/index.html', None)
+    make_request(host, port, 'GET', '/index.html', None)
 
     # Sending a POST request
-    make_request(host, port, 'POST', 'output.txt', 'Hello from Python client')
+    # make_request(host, port, 'POST', 'output.txt', 'Hello from Python client')
     # path = '/output.txt'    # Update with the path you want to POST to
     # data = 'Hello from Python POST request'
 
