@@ -1,50 +1,7 @@
-####################################text get##############################################
-import socket
-
-def make_request(host, port, method, path='/', body=None, content_type=None):
-    if method == 'GET':
-        request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
-    elif method == 'POST':
-        if body is None:
-            raise ValueError('Body must be provided for POST requests')
-        content_length = len(body)
-        request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
-    else:
-        raise ValueError(f'Unsupported HTTP method: {method}')
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((host, port))
-        s.sendall(request.encode())
-        response = b""
-        while True:
-            part = s.recv(4096)
-            if not part:
-                break
-            response += part
-
-        # Print the received data as text
-        print('Received:', response.decode('utf-8'))
-
-if __name__ == '__main__':
-    host = '127.0.0.1'
-    port = 1025
-
-    # Making a GET request for the 'textfile.txt' path with plain text content
-    make_request(host, port, 'GET', '/output.txt')
-
-
-
-
-
-
-
-
-############################################text post#######################################
-
+# ####################################text get##############################################
 # import socket
 
 # def make_request(host, port, method, path='/', body=None, content_type=None):
-
 #     if method == 'GET':
 #         request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
 #     elif method == 'POST':
@@ -52,6 +9,8 @@ if __name__ == '__main__':
 #             raise ValueError('Body must be provided for POST requests')
 #         content_length = len(body)
 #         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
+#     else:
+#         raise ValueError(f'Unsupported HTTP method: {method}')
 
 #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 #         s.connect((host, port))
@@ -62,14 +21,55 @@ if __name__ == '__main__':
 #             if not part:
 #                 break
 #             response += part
-#         print('Received:', response.decode())
+
+#         # Print the received data as text
+#         print('Received:', response.decode('utf-8'))
 
 # if __name__ == '__main__':
 #     host = '127.0.0.1'
-#     port = 1024
+#     port = 1025
 
-#     # Sending a POST request with Content-Type set to 'text/plain'
-#     make_request(host, port, 'POST', 'output.txt', 'elhamdulilah', 'text/plain')
+#     # Making a GET request for the 'textfile.txt' path with plain text content
+#     make_request(host, port, 'GET', '/output.txt')
+
+
+
+
+
+
+
+
+############################################text post#######################################
+
+import socket
+
+def make_request(host, port, method, path='/', body=None, content_type=None):
+
+    if method == 'GET':
+        request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+    elif method == 'POST':
+        if body is None:
+            raise ValueError('Body must be provided for POST requests')
+        content_length = len(body)
+        request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host, port))
+        s.sendall(request.encode())
+        response = b""
+        while True:
+            part = s.recv(4096)
+            if not part:
+                break
+            response += part
+        print('Received:', response.decode())
+
+if __name__ == '__main__':
+    host = '127.0.0.1'
+    port = 1025
+
+    # Sending a POST request with Content-Type set to 'text/plain'
+    make_request(host, port, 'POST', 'output.txt', 'elhamdulilah', 'text/plain')
 ########################################html get#########################################
 # import socket
 
