@@ -1,15 +1,57 @@
-# import socket
-# import concurrent.futures
-# import requests
+####################################text get##############################################
+import socket
 
-# def make_request(host, port, method, path='/', body=None):
+def make_request(host, port, method, path='/', body=None, content_type=None):
+    if method == 'GET':
+        request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+    elif method == 'POST':
+        if body is None:
+            raise ValueError('Body must be provided for POST requests')
+        content_length = len(body)
+        request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
+    else:
+        raise ValueError(f'Unsupported HTTP method: {method}')
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host, port))
+        s.sendall(request.encode())
+        response = b""
+        while True:
+            part = s.recv(4096)
+            if not part:
+                break
+            response += part
+
+        # Print the received data as text
+        print('Received:', response.decode('utf-8'))
+
+if __name__ == '__main__':
+    host = '127.0.0.1'
+    port = 1025
+
+    # Making a GET request for the 'textfile.txt' path with plain text content
+    make_request(host, port, 'GET', '/output.txt')
+
+
+
+
+
+
+
+
+############################################text post#######################################
+
+# import socket
+
+# def make_request(host, port, method, path='/', body=None, content_type=None):
 
 #     if method == 'GET':
 #         request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
 #     elif method == 'POST':
 #         if body is None:
 #             raise ValueError('Body must be provided for POST requests')
-#         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {len(body)}\r\n\r\n{body}'
+#         content_length = len(body)
+#         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
 
 #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 #         s.connect((host, port))
@@ -22,48 +64,144 @@
 #             response += part
 #         print('Received:', response.decode())
 
-
-
-
-
 # if __name__ == '__main__':
 #     host = '127.0.0.1'
 #     port = 1024
-#     #// g++ -o Server Server.cpp -pthread
-#     #cd MultiThreaded-HTTP-Server
-#     # # Sending a GET request
-#     # make_request(host, port, 'GET', '/index.html', None)
 
-#     # Sending a POST request
-#     make_request(host, port, 'POST', 'input.txt', 'Hello from Python client')
-#     # path = '/output.txt'    # Update with the path you want to POST to
-#     # data = 'Hello from Python POST request'
+#     # Sending a POST request with Content-Type set to 'text/plain'
+#     make_request(host, port, 'POST', 'output.txt', 'elhamdulilah', 'text/plain')
+########################################html get#########################################
+# import socket
 
-#     # make_post_request(host, port, path, data)
+# def make_request(host, port, method, path='/', body=None, content_type=None):
+#     if method == 'GET':
+#         request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+#     elif method == 'POST':
+#         if body is None:
+#             raise ValueError('Body must be provided for POST requests')
+#         content_length = len(body)
+#         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
+#     else:
+#         raise ValueError(f'Unsupported HTTP method: {method}')
+
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#         s.connect((host, port))
+#         s.sendall(request.encode())
+#         response = b""
+#         while True:
+#             part = s.recv(4096)
+#             if not part:
+#                 break
+#             response += part
+#         print('Received:', response.decode())
+
+# if __name__ == '__main__':
+#     host = '127.0.0.1'
+#     port = 1025
+
+#     # Making a GET request for the 'index.html' path
+#     make_request(host, port, 'GET', '/index.html')
 
 
-import socket
 
-def send_post_request():
-    host = "127.0.0.1"  # Update with your server's IP address
-    port = 1024  # Update with your server's port
+ #############################################html post####################################################
+# import socket
 
-    data = "This is a test POST request data."
+# def make_request(host, port, method, path='/', body=None, content_type=None):
 
-    # Create a socket connection to the server
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-        client_socket.connect((host, port))
+#     if method == 'GET':
+#         request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+#     elif method == 'POST':
+#         if body is None:
+#             raise ValueError('Body must be provided for POST requests')
+#         content_length = len(body)
+#         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
 
-        # Craft the HTTP POST request
-        request = f"POST / HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Length: {len(data)}\r\n\r\n{data}"
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#         s.connect((host, port))
+#         s.sendall(request.encode())
+#         response = b""
+#         while True:
+#             part = s.recv(4096)
+#             if not part:
+#                 break
+#             response += part
+#         print('Received:', response.decode())
 
-        # Send the POST request to the server
-        client_socket.sendall(request.encode())
+# if __name__ == '__main__':
+#     host = '127.0.0.1'
+#     port = 1025
 
-        # Receive and print the server's response
-        response = client_socket.recv(4096)
-        print(response.decode())
+#     # Sending a POST request with Content-Type set to 'text/html'
+#     make_request(host, port, 'POST', 'output.html', '<html><body><h1>Hello, World!</h1></body></html>', 'text/html')
 
-if __name__ == "__main__":
-    send_post_request()
+########################################images post################################################################
+# import socket
+# import base64
+
+# def make_request(host, port, method, path='/', body=None, content_type=None):
+
+#     if method == 'GET':
+#         request = f'GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+#     elif method == 'POST':
+#         if body is None:
+#             raise ValueError('Body must be provided for POST requests')
+#         content_length = len(body)
+#         request = f'POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}'
+
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#         s.connect((host, port))
+#         s.sendall(request.encode())
+#         response = b""
+#         while True:
+#             part = s.recv(4096)
+#             if not part:
+#                 break
+#             response += part
+#         print('Received:', response.decode())
+
+# if __name__ == '__main__':
+#     host = '127.0.0.1'
+#     port = 1025
+
+#     # Load an example image (replace 'your_image_path.jpg' with the actual image path)
+#     with open('photo.jpeg', 'rb') as image_file:
+#         image_content = base64.b64encode(image_file.read()).decode()
+
+#     # Sending a POST request with Content-Type set to 'image/jpeg'
+#     # make_request(host, port, 'POST', 'output.jpg', image_content, 'image/jpeg')
+#     make_request(host, port, 'GET', 'image.jpeg', image_content, 'image/jpeg')
+######cd MultiThreaded-HTTP-Server
+########gcc -o server server.c
+
+#########################image get#############################################
+# import socket
+
+# def make_request(host, port, method, path='/'):
+#     request = f'{method} {path} HTTP/1.1\r\nHost: {host}\r\n\r\n'
+
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#         s.connect((host, port))
+#         s.sendall(request.encode())
+#         response = b""
+#         while True:
+#             part = s.recv(4096)
+#             if not part:
+#                 break
+#             response += part
+
+#     return response
+
+# if __name__ == '__main__':
+#     host = '127.0.0.1'
+#     port = 1025
+
+#     # Making a GET request for the 'image.jpeg' path
+#     response = make_request(host, port, 'GET', 'image.jpeg')
+#     with open('received_image.jpeg', 'wb') as received_file:
+#         received_file.write(response)
+
+#     print('Received image saved as "received_image.jpeg"')
+
+
 
