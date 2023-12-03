@@ -3,178 +3,252 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <stdbool.h> 
 
 #define BUFFER_SIZE 1024
 
-void DieWithUserMessage(const char *msg, const char *detail) {
-    fputs(msg, stderr);
-    fputs(": ", stderr);
-    fputs(detail, stderr);
-    fputc("\n", stderr);
-    exit(1);
-}
+char request[BUFFER_SIZE];
+char response[BUFFER_SIZE];
+
 
 void DieWithSystemMessage(const char *msg) {
     perror(msg);
     exit(1);
 }
 
-void handle_get(const char *file_path, const char *host_name, int port_number) {
-    //TODO remove the socket creation part as this will be given by the server listening to this client.
-    // Create socket
-    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket == -1) {
-        DieWithSystemMessage("Socket Creation Failed");
-    }
-
-    // Specify server information
-    struct sockaddr_in server_address;
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port_number);
-    int addr_status = inet_pton(AF_INET, host_name, &server_address.sin_addr);
-
-    if (addr_status == 0) {
-        DieWithSystemMessage("Source not valid");
-    } else if(addr_status == -1) {
-        DieWithSystemMessage("Unknown address family");
-    }
-
-    // Connect to server
-    if (connect(client_socket, (struct sockaddr *)&server_address, sizeof(server_address)) == -1) {
-        DieWithSystemMessage("Connection failed");
-    }
-
-    // Prepare GET request
-    char buffer[BUFFER_SIZE];
-    snprintf(buffer, BUFFER_SIZE, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", file_path, host_name);
-
-    // Send GET request
-    send(client_socket, buffer, strlen(buffer), 0);
-
-    // Receive and display response
-    char response[BUFFER_SIZE];
-    int bytes_received = recv(client_socket, response, BUFFER_SIZE - 1, 0);
-    
-    if (bytes_received < 0) {
-        perror("recv() failed");
-    }
-
-    while(bytes_received > 0) {
-        ssize_t bytes_sent = send(client_socket, buffer, bytes_received, 0);
-        
-        if(bytes_sent < 0) 
-            DieWithSystemMessage("send() failed");
-        else if(bytes_sent != bytes_received)
-            DieWithUserMessage("send()", "sent unexpected number of bytes");
-
-        bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
-        if(bytes_received < 0)
-            DieWithSystemMessage("recv() failed");
-        FILE *fp = fopen("local_filename", "a");
-        fprintf(fp, "%s", response);
-        fclose(fp);
-    }
-
-    // Close socket
-    close(client_socket);
+long getFileSize(FILE *file) {
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    return size;
 }
 
-void handle_post(const char *file_path, const char *host_name, int port_number) {
-    // Create socket
-    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket == -1) {
-        DieWithSystemMessage("Socket creation failed");
+
+int parseCommand(const char *line, char *method, char *path, char *host, int *port_number) {
+    // Assuming the format in input.txt is "method path host"
+    return sscanf(line, "%19s %255s %255s %d", method, path, host, port_number);
+}
+
+
+int connectToServer(const char *host, int port_number) {
+    // Create socket using socket()
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        DieWithSystemMessage("ERROR opening socket");
     }
 
-    // Specify server information
-    struct sockaddr_in server_address;
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(port_number);
-    int addr_status = inet_pton(AF_INET, host_name, &server_address.sin_addr);
-    
-    if(addr_status == 0) {
-        DieWithSystemMessage("Source not valid");
-    } else if(addr_status == -1) {
-        DieWithSystemMessage("Unknown address family");
+    // Define a sockaddr_in structure for the server address
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));  // Clear structure
+    serv_addr.sin_family = AF_INET;            // Internet address family
+    serv_addr.sin_port = htons(port_number);   // Server port
+
+    // If connecting locally, use the loopback IP address
+    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) <= 0) {
+        close(sockfd);
+        DieWithSystemMessage("Invalid address/ Address not supported");
     }
-    
-    // Connect to server
-    if (connect(client_socket, (struct sockaddr *)&server_address, sizeof(server_address)) == -1) 
-        DieWithSystemMessage("Connection failed");
-    
 
-    // Open the file for reading
-    FILE *file = fopen(file_path, "r");
-    if (file == NULL) 
-        DieWithSystemMessage("Error opening file");
-    
+    // Connect to the server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        close(sockfd);
+        DieWithSystemMessage("ERROR connecting");
+    }
 
-    // Calculate file size
+    return sockfd;
+}
+
+void validateArguments(int argc) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: <server_ip> <port_number>\n");
+        exit(1);
+    }
+}
+
+FILE *openInputFile(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        DieWithSystemMessage("Error opening the file");
+    }
+    return file;
+}
+
+void saveResponseToFile(const char *response, int total_received) {
+    // Check if the response body is present
+    char *bodyStart = strstr(response, "\r\n\r\n");
+    if (bodyStart) {
+        bodyStart += 4; // Move to start of body
+
+        // Check the Content-Type header to determine the type of content
+        char *contentType = strstr(response, "Content-Type: ");
+        bool saveToFile = false;
+        const char *fileExtension = "";
+
+        if (contentType) {
+            contentType += strlen("Content-Type: ");
+            if (strstr(contentType, "text/plain") != NULL) {
+                printf("TXT\n");
+                fileExtension = ".txt";
+                saveToFile = true;
+            } else if (strstr(contentType, "image/jpeg") != NULL) {
+                printf("JPEG\n");
+                fileExtension = ".jpeg";
+                saveToFile = true;
+            } else if (strstr(contentType, "text/html") != NULL) {
+                printf("HTML\n");
+                fileExtension = ".html";
+                saveToFile = true;
+            }
+        }
+
+        if (saveToFile) {
+            // Write body to file based on content type
+            char filename[100];
+            snprintf(filename, sizeof(filename), "received_content%s", fileExtension);
+            FILE *fp = fopen(filename, "wb"); // Use "wb" for binary files
+            if (fp != NULL) {
+                fwrite(bodyStart, sizeof(char), total_received - (bodyStart - response), fp);
+                fclose(fp);
+            } else {
+                // Handle file writing error
+                perror("File writing error");
+            }
+        }
+    }
+}
+
+
+void handleGET(int sockfd, const char *path, const char *host) {
+    char request[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+
+    // Create HTTP GET request
+    snprintf(request, BUFFER_SIZE, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    if (send(sockfd, request, strlen(request), 0) < 0) {
+        DieWithSystemMessage("Send error");
+    }
+
+    // Receive response in a loop to handle large responses
+    memset(response, 0, BUFFER_SIZE);
+    int total_received = 0;
+    ssize_t n;
+    while ((n = recv(sockfd, response + total_received, BUFFER_SIZE - total_received - 1, 0)) > 0) {
+        total_received += n;
+    }
+    if (n < 0) {
+        DieWithSystemMessage("Receive error");
+    }
+    response[total_received] = '\0';  // Null-terminate the response
+
+    printf("Response:\n%s\n", response);
+
+    // Save the response body based on content type
+    saveResponseToFile(response, total_received);
+}
+
+void handlePOST(int sockfd, const char *path, const char *host) {
+    printf("Handling POST request\n");
+
+    // Open the text file in read mode
+    FILE *file = fopen(path, "r");
+    if (file == NULL) {
+        perror("Error opening input text file");
+        return;
+    }
+
+    // Get the size of the text file
     fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
+    long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    // Allocate memory for file content to be sent in the POST request
-    char *file_content = (char *)malloc(file_size + 1);
-    if (file_content == NULL) {
+    // Allocate memory to store file contents
+    char *fileData = (char *)malloc(fileSize);
+    if (fileData == NULL) {
         fclose(file);
-        DieWithSystemMessage("Memory allocation failed");
+        perror("Memory allocation failed");
+        return;
     }
 
-    // Read file content
-    fread(file_content, 1, file_size, file);
-    fclose(file);
-    file_content[file_size] = '\0';
+    // Read the file contents into fileData
+    size_t bytesRead = fread(fileData, 1, fileSize, file);
+    if (bytesRead != fileSize) {
+        fclose(file);
+        free(fileData);
+        perror("Error reading text file");
+        return;
+    }
+
+    fclose(file); // Close the text file after reading
+
+    char request[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+
+    // Content-Type handling based on file extension or specific conditions
+    const char *contentType = "application/octet-stream"; // Default content type (binary/octet-stream)
+
+    // Check file extension or any other conditions to determine the content type
+    // Example: Check if the file path ends with specific extensions (txt, html, jpg, etc.)
+    const char *extension = strrchr(path, '.'); // Get file extension
+    if (extension != NULL) {
+        if (strcmp(extension, ".txt") == 0) {
+            contentType = "text/plain";
+        } else if (strcmp(extension, ".html") == 0) {
+            contentType = "text/html";
+        } else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
+            contentType = "image/jpeg";
+        }
+        // Add more conditions for other file types as needed
+    }
 
     // Construct the POST request
-    char buffer[BUFFER_SIZE];
-    snprintf(buffer, BUFFER_SIZE, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %ld\r\n\r\n%s",
-            file_path, host_name, file_size, file_content);
+    sprintf(request, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %ld\r\nContent-Type: %s\r\n\r\n%s",
+            path, host, fileSize, contentType, fileData);
 
-    // Send POST request
-    send(client_socket, buffer, strlen(buffer), 0);
 
-    // Receive and display response
-    char response[BUFFER_SIZE];
-    int bytes_received = recv(client_socket, response, BUFFER_SIZE - 1, 0);
-    if (bytes_received < 0) {
-        DieWithSystemMessage("recv() failed");
+    send(sockfd, request, strlen(request), 0);
+
+    memset(response, 0, BUFFER_SIZE);
+    ssize_t n;
+    while ((n = recv(sockfd, response, BUFFER_SIZE - 1, 0)) > 0) {
+        response[n] = '\0'; // Null-terminate the response
+        printf("Response:\n%s\n", response);
     }
 
-    while (bytes_received > 0) {
-        response[bytes_received] = '\0';
-        printf("%s", response); // Display received data
-        int bytes_received = recv(client_socket, response, BUFFER_SIZE - 1, 0);
-        if (bytes_received < 0)
-            DieWithSystemMessage("recv() failed");
-    }
-
-    // Free allocated memory
-    free(file_content);
-
-    // Close socket
-    close(client_socket);
+    free(fileData); // Free dynamically allocated memory
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 4 || argc > 5) {
-        fprintf("Usage: %s file-path host-name [port-number]\n", argv[0]);
+    validateArguments(argc);
+
+    FILE *file = openInputFile("input.txt");
+
+    char line[256];
+    char method[20], path[256], host[256];
+    int port_number = atoi(argv[2]); // Use the port number from the command line arguments
+
+    while (fgets(line, sizeof(line), file)) {
+        if (parseCommand(line, method, path, host, &port_number) < 3) { // Expecting 4 items from input
+            fprintf(stderr, "Invalid Command Format: %s\n", line);
+            continue;
+        }
+        
+        printf("Method: %s\nPath: %s\nHost: %s\nPort: %d\n", method, path, host, port_number);
+
+        int sockfd = connectToServer(host, port_number);
+        printf("Connected to Socket Number: %d\n", sockfd);
+
+        if (strcmp(method, "client_get") == 0) { // Changed to standard HTTP method
+            handleGET(sockfd, path, host);      
+        } else if (strcmp(method, "client_post") == 0) { // Changed to standard HTTP method
+            handlePOST(sockfd, path, host);
+        }
+
+        close(sockfd);
     }
 
-    const char *file_path = argv[1];
-    const char *host_name = argv[2];
-    int port_number = (argc == 5) ? atoi(argv[3]) : 80;
-
-    // Check if the command is GET or POST and call respective function
-    if (strcmp(argv[1], "client_get") == 0) {
-        handle_get(file_path, host_name, port_number);
-    } else if (strcmp(argv[1], "client_post") == 0) {
-        handle_post(file_path, host_name, port_number);
-    } else {
-        DieWithSystemMessage("Invalid command\n");
-    }
-
-    return EXIT_SUCCESS;
+    fclose(file);
+    return 0;
 }
-

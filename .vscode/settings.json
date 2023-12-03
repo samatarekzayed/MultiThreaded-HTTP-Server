@@ -1,5 +1,11 @@
 {
+<<<<<<< Updated upstream
   "files.associations": {
       "pthread.h": "c"
   }
+=======
+    "files.associations": {
+        "unistd.h": "c"
+    }
+>>>>>>> Stashed changes
 }
