@@ -8,14 +8,40 @@
 #include <sys/time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <signal.h>
+#include <sys/wait.h> 
+#include <sys/mman.h>
+#define TARGET_LOAD_THRESHOLD 1.0
+#define MAX_TIMEOUT_SECONDS 50
+#define MIN_TIMEOUT_SECONDS 5
+#define BUFFER_SIZE 1024
 
 // Function prototypes
+volatile int activeConnections = 0;
+
+void cleanup();
+void handleClient(int clientSocket);
 void saveDataToFile(int clientSocket, const char* filename, size_t contentLength, const char* requestBody, const char* contentType);
 const char* getContentType(const char* filename);
 
-#define BUFFER_SIZE 1024
 
 
+struct SharedData {
+    int activeConnections;
+};
+
+// Pointer to shared data
+struct SharedData* sharedData;
+
+void decrementActiveConnections() {
+     __sync_fetch_and_sub(&sharedData->activeConnections, 1);
+}
+
+// void handleTimeout(int signo) {
+//     // Timeout signal handler
+//     // Decrement the activeConnections counter
+//     decrementActiveConnections();
+// }
 
 void handleClient(int clientSocket) {
     char buffer[BUFFER_SIZE];
@@ -90,6 +116,19 @@ void handleClient(int clientSocket) {
             fprintf(stderr, "Invalid POST request: missing request body\n");
         }
     }
+   
+  
+    int timeoutSeconds;
+
+    // Check the number of active connections and set timeout accordingly
+    if (sharedData->activeConnections > 5) {
+        timeoutSeconds = MIN_TIMEOUT_SECONDS ;
+    } else {
+        timeoutSeconds = MAX_TIMEOUT_SECONDS ;
+    }
+printf("timeoutsecond%d\n\n",timeoutSeconds);
+    // Wait for the specified time before closing the client socket
+    sleep(timeoutSeconds);  
 
     // Close the client socket
     close(clientSocket);
@@ -129,56 +168,9 @@ const char* getContentType(const char* filename) {
     return "text/plain";
 }
 
-// int main(int argc, char *argv[]) {
-//     if (argc != 2) {
-//         fprintf(stderr, "Usage: %s port_number\n", argv[0]);
-//         return 1;
-//     }
-
-//     int port = atoi(argv[1]);
-
-//     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-//     if (serverSocket == -1) {
-//         fprintf(stderr, "Error creating socket\n");
-//         return 1;
-//     }
-
-//     struct sockaddr_in serverAddr;
-//     serverAddr.sin_family = AF_INET;
-//     serverAddr.sin_addr.s_addr = INADDR_ANY;
-//     serverAddr.sin_port = htons(port);
-
-//     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
-//         fprintf(stderr, "Error binding socket\n");
-//         return 1;
-//     }
-
-//     if (listen(serverSocket, 10) == -1) {
-//         fprintf(stderr, "Error listening on socket\n");
-//         return 1;
-//     }
-
-//     printf("Server listening on port %d...\n", port);
-
-//     while (1) {
-//         struct sockaddr_in clientAddr;
-//         socklen_t clientAddrLen = sizeof(clientAddr);
-//         int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
-//         if (clientSocket == -1) {
-//             fprintf(stderr, "Error accepting connection\n");
-//             continue;
-//         }
-
-//         handleClient(clientSocket);
-
-//     }
-
-//     close(serverSocket);
-
-//     return 0;
-// }
 
 int main(int argc, char *argv[]) {
+
     if (argc != 2) {
         fprintf(stderr, "Usage: %s port_number\n", argv[0]);
         return 1;
@@ -209,6 +201,26 @@ int main(int argc, char *argv[]) {
 
     printf("Server listening on port %d...\n", port);
 
+   // Create a shared memory object
+    int shm_fd = shm_open("/shared_data", O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+    if (shm_fd == -1) {
+        perror("Error creating shared memory");
+        return 1;
+    }
+
+    // Set the size of the shared memory object
+    if (ftruncate(shm_fd, sizeof(struct SharedData)) == -1) {
+        perror("Error setting the size of shared memory");
+        return 1;
+    }
+
+    // Map the shared memory object
+    sharedData = (struct SharedData*)mmap(NULL, sizeof(struct SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (sharedData == MAP_FAILED) {
+        perror("Error mapping shared memory");
+        return 1;
+    }
+     atexit(cleanup);
     while (1) {
         struct sockaddr_in clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
@@ -226,12 +238,18 @@ int main(int argc, char *argv[]) {
             continue;
         } else if (pid == 0) {
             // This is the child process
-            close(serverSocket);  // Close the server socket in the child process
+            // close(serverSocket);  // Close the server socket in the child process
+                // Increment the activeConnections counter
+            __sync_fetch_and_add(&sharedData->activeConnections, 1);
 
+
+
+            // Handle the client in the child process
             handleClient(clientSocket);
 
-            // Close the client socket in the child process
-            close(clientSocket);
+          // Decrement the activeConnections counter in shared memory
+            decrementActiveConnections();
+          
 
             // Exit the child process
             exit(0);
@@ -239,10 +257,21 @@ int main(int argc, char *argv[]) {
             // This is the parent process
             close(clientSocket);  // Close the client socket in the parent process
         }
+          while (waitpid(-1, NULL, WNOHANG) > 0) {
+            // Do nothing
+        }
     }
-
+   // Unmap shared memory
+    cleanup();
     close(serverSocket);
 
     return 0;
 }
-
+void cleanup() {
+    // Unmap shared memory
+    if (sharedData != NULL && sharedData != MAP_FAILED) {
+        munmap(sharedData, sizeof(struct SharedData));
+    }
+    // Close shared memory object
+    shm_unlink("/shared_data");
+}

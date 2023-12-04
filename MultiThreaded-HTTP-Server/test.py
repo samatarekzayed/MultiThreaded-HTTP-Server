@@ -66,7 +66,7 @@ def make_request(host, port, method, path='/', body=None, content_type=None):
 
 if __name__ == '__main__':
     host = '127.0.0.1'
-    port = 1025
+    port = 1024
 
     # Sending a POST request with Content-Type set to 'text/plain'
     make_request(host, port, 'POST', 'output.txt', 'elhamdulilah', 'text/plain')
