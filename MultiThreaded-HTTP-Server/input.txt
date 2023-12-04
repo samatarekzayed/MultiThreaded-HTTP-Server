@@ -1,1 +1,2 @@
-client_get /index.html 127.0.0.1
+client_get /images.jpeg 127.0.0.1
+client_get /draft.txt 127.0.0.1

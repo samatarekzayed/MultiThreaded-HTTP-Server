@@ -8,7 +8,7 @@
 #include <netdb.h>
 #include <stdbool.h> 
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024 * 500 * 8
 
 char request[BUFFER_SIZE];
 char response[BUFFER_SIZE];
@@ -68,7 +68,7 @@ void validateArguments(int argc) {
     }
 }
 
-FILE *openInputFile(const char *filename) {
+FILE *open_file(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (file == NULL) {
         DieWithSystemMessage("Error opening the file");
@@ -76,47 +76,100 @@ FILE *openInputFile(const char *filename) {
     return file;
 }
 
-void saveResponseToFile(const char *response, int total_received) {
+
+void writeResponseBodyToTxtFile(const char *response, int total_received) {
+    // Check if the response content is present
+    if (response != NULL && total_received > 0) {
+
+        // Write content to file
+        FILE *fp = fopen("response_body.txt", "w"); // Open file in write mode
+        if (fp != NULL) {
+            fwrite(response, sizeof(char), total_received, fp);
+            fclose(fp);
+            printf("Response body written to 'response_body.txt'\n");
+        } else {
+            perror("File writing error");
+        }
+    } else {
+        DieWithSystemMessage("Invalid or empty response content.\n");
+    }
+}
+
+// Function to write the response body to a file
+void writeResponseBodyToHTMLFile(const char *response, int total_received) {
+     // Check if the response content is present
+    if (response != NULL && total_received > 0) {
+
+        // Write content to file
+        FILE *fp = fopen("response_body.html", "w"); // Open file in write mode
+        if (fp != NULL) {
+            fwrite(response, sizeof(char), total_received, fp);
+            fclose(fp);
+            printf("Response body written to 'response_body.html'\n");
+        } else {
+            perror("File writing error");
+        }
+    } else {
+        DieWithSystemMessage("Invalid or empty response content.\n");
+    }
+}
+
+void saveImageToFile(const char *response, int total_received) {
     // Check if the response body is present
     char *bodyStart = strstr(response, "\r\n\r\n");
     if (bodyStart) {
         bodyStart += 4; // Move to start of body
 
-        // Check the Content-Type header to determine the type of content
-        char *contentType = strstr(response, "Content-Type: ");
-        bool saveToFile = false;
-        const char *fileExtension = "";
-
-        if (contentType) {
-            contentType += strlen("Content-Type: ");
-            if (strstr(contentType, "text/plain") != NULL) {
-                printf("TXT\n");
-                fileExtension = ".txt";
-                saveToFile = true;
-            } else if (strstr(contentType, "image/jpeg") != NULL) {
-                printf("JPEG\n");
-                fileExtension = ".jpeg";
-                saveToFile = true;
-            } else if (strstr(contentType, "text/html") != NULL) {
-                printf("HTML\n");
-                fileExtension = ".html";
-                saveToFile = true;
-            }
+        // Write body to file as an image
+        FILE *fp = fopen("image.jpeg", "wb"); // Open file in binary write mode (assuming it's a JPEG image)
+        if (fp != NULL) {
+            fwrite(bodyStart, sizeof(char), total_received - (bodyStart - response), fp);
+            fclose(fp);
+            printf("Image data written to 'image.jpeg'\n");
+        } else {
+            perror("File writing error");
         }
+    }
+}
 
-        if (saveToFile) {
-            // Write body to file based on content type
-            char filename[100];
-            snprintf(filename, sizeof(filename), "received_content%s", fileExtension);
-            FILE *fp = fopen(filename, "wb"); // Use "wb" for binary files
-            if (fp != NULL) {
-                fwrite(bodyStart, sizeof(char), total_received - (bodyStart - response), fp);
-                fclose(fp);
-            } else {
-                // Handle file writing error
-                perror("File writing error");
-            }
+const char *getFileExtention(const char *str) {
+    if(str == NULL)
+        return NULL;
+    
+    char*content_type = strstr(str, ".");
+
+    if(content_type) {
+        if(strcmp(content_type, ".txt") == 0 || strcmp(content_type, ".html") == 0 || strcmp(content_type, ".jpeg") == 0) {
+            return content_type;
+        } else {
+            DieWithSystemMessage("Content type not supported");
         }
+    }
+    return NULL;
+}
+
+void saveResponseToFile(const char *response, int total_received, const char *fileExtension) {
+    if (response == NULL || fileExtension == NULL) {
+        DieWithSystemMessage("Invalid arguments");
+    }
+
+    // Check if the response body is present
+    char *bodyStart = strstr(response, "\r\n\r\n");
+    if (bodyStart) {
+        bodyStart += 4; // Move to start of body
+        int body_length = total_received - (bodyStart - response); // Calculate the body length
+        
+        if (strcmp(".txt", fileExtension) == 0) {
+            writeResponseBodyToTxtFile(bodyStart, body_length);
+        } else if (strcmp(".html", fileExtension) == 0) {
+            writeResponseBodyToHTMLFile(bodyStart, body_length);
+        } else if (strcmp(".jpeg", fileExtension) == 0) {
+            saveImageToFile(bodyStart, body_length);
+        } else {
+            DieWithSystemMessage("File extension not supported");
+        }
+    } else {
+        DieWithSystemMessage("Response body not found");
     }
 }
 
@@ -125,8 +178,12 @@ void handleGET(int sockfd, const char *path, const char *host) {
     char request[BUFFER_SIZE];
     char response[BUFFER_SIZE];
 
+    // Get the file extension using the function
+    const char *fileExtension = getFileExtention(path);
+
     // Create HTTP GET request
-    snprintf(request, BUFFER_SIZE, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    snprintf(request, BUFFER_SIZE, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Keep-Alive\r\n\r\n", path, host);
+    
     if (send(sockfd, request, strlen(request), 0) < 0) {
         DieWithSystemMessage("Send error");
     }
@@ -138,22 +195,24 @@ void handleGET(int sockfd, const char *path, const char *host) {
     while ((n = recv(sockfd, response + total_received, BUFFER_SIZE - total_received - 1, 0)) > 0) {
         total_received += n;
     }
+
     if (n < 0) {
         DieWithSystemMessage("Receive error");
     }
+
     response[total_received] = '\0';  // Null-terminate the response
 
     printf("Response:\n%s\n", response);
 
     // Save the response body based on content type
-    saveResponseToFile(response, total_received);
+    saveResponseToFile(response, total_received, fileExtension);
 }
 
 void handlePOST(int sockfd, const char *path, const char *host) {
     printf("Handling POST request\n");
 
     // Open the text file in read mode
-    FILE *file = fopen(path, "r");
+    FILE *file = fopen("draft.txt", "r");
     if (file == NULL) {
         perror("Error opening input text file");
         return;
@@ -223,21 +282,25 @@ void handlePOST(int sockfd, const char *path, const char *host) {
 int main(int argc, char *argv[]) {
     validateArguments(argc);
 
-    FILE *file = openInputFile("input.txt");
+    FILE *file = open_file("input.txt");
 
-    char line[256];
+    char line[1024];
     char method[20], path[256], host[256];
     int port_number = atoi(argv[2]); // Use the port number from the command line arguments
+    char ip_address[256];
+    strcpy(ip_address, argv[1]);
+    int server_port =atoi(argv[2]);
 
+    int sockfd = connectToServer(ip_address, server_port);
     while (fgets(line, sizeof(line), file)) {
-        if (parseCommand(line, method, path, host, &port_number) < 3) { // Expecting 4 items from input
+        if (parseCommand(line, method, path, host, &port_number) < 3) { // Expecting 3 items from input
             fprintf(stderr, "Invalid Command Format: %s\n", line);
             continue;
         }
         
         printf("Method: %s\nPath: %s\nHost: %s\nPort: %d\n", method, path, host, port_number);
 
-        int sockfd = connectToServer(host, port_number);
+
         printf("Connected to Socket Number: %d\n", sockfd);
 
         if (strcmp(method, "client_get") == 0) { // Changed to standard HTTP method
@@ -245,9 +308,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(method, "client_post") == 0) { // Changed to standard HTTP method
             handlePOST(sockfd, path, host);
         }
-
-        close(sockfd);
+        
     }
+    close(sockfd);
 
     fclose(file);
     return 0;
