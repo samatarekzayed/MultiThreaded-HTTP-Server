@@ -25,7 +25,6 @@ long getFileSize(FILE *file) {
     return size;
 }
 
-
 int parseCommand(const char *line, char *method, char *path, char *host, int *port_number) {
     // Assuming the format in input.txt is "method path host"
     return sscanf(line, "%19s %255s %255s %d", method, path, host, port_number);
@@ -203,7 +202,7 @@ void handleGET(int sockfd, const char *path, const char *host) {
         printf("REVIEVING...");
         total_received += n;
     }
-    
+
     printf("Total received: %d\n", total_received);
 
     if (n < 0) {
@@ -224,7 +223,7 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     printf("Handling POST request\n");
 
     // Open the text file in read mode
-    FILE *file = fopen("draft.txt", "r");
+    FILE *file = fopen("images.jpeg", "rb");
     if (file == NULL) {
         perror("Error opening input text file");
         return;
@@ -244,7 +243,7 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     }
 
     // Read the file contents into fileData
-    size_t bytesRead = fread(fileData, 1, fileSize, file);
+    size_t bytesRead = fread(fileData, 1, BUFFER_SIZE, file);
     if (bytesRead != fileSize) {
         fclose(file);
         free(fileData);
@@ -278,6 +277,8 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     sprintf(request, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %ld\r\nContent-Type: %s\r\n\r\n%s",
             path, host, fileSize, contentType, fileData);
 
+    printf("FILEDATA\n%s", request);
+
 
     send(sockfd, request, strlen(request), 0);
 
@@ -285,8 +286,8 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     ssize_t n;
     while ((n = recv(sockfd, response, BUFFER_SIZE - 1, 0)) > 0) {
         response[n] = '\0'; // Null-terminate the response
-        printf("Response:\n%s\n", response);
     }
+    printf("Response:\n%s\n", response);
 
     free(fileData); // Free dynamically allocated memory
 }
