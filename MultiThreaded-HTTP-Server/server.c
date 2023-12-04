@@ -55,6 +55,7 @@ void handleClient(int clientSocket) {
         close(clientSocket);
         return;
     }
+//sama
 
     // Print the received HTTP request
     printf("Received HTTP request:\n%s\n", buffer);
