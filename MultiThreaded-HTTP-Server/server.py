@@ -42,7 +42,7 @@ class SimpleHTTPServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'POST request received. Data: ' + post_data)
 
-def run_server(server_class=HTTPServer, handler_class=SimpleHTTPServer, port=1024):
+def run_server(server_class=HTTPServer, handler_class=SimpleHTTPServer, port=1025):
     server_address = ('', port)
     httpd = server_class(server_address, handler_class)
     print(f"Server started on port {port}")

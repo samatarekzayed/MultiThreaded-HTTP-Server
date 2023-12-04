@@ -8,89 +8,156 @@
 #include <sys/time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <signal.h>
+#include <sys/wait.h> 
+#include <sys/mman.h>
+#include <time.h>
+
+#define TARGET_LOAD_THRESHOLD 1.0
+#define MAX_TIMEOUT_SECONDS 20
+#define MIN_TIMEOUT_SECONDS 5
+#define BUFFER_SIZE 1024 * 500 * 8
 
 // Function prototypes
+volatile int activeConnections = 0;
+
+void cleanup();
+void handleClient(int clientSocket);
 void saveDataToFile(int clientSocket, const char* filename, size_t contentLength, const char* requestBody, const char* contentType);
 const char* getContentType(const char* filename);
 
-#define BUFFER_SIZE 1024
 
 
+struct SharedData {
+    int activeConnections;
+};
+
+// Pointer to shared data
+struct SharedData* sharedData;
+
+void decrementActiveConnections() {
+     __sync_fetch_and_sub(&sharedData->activeConnections, 1);
+}
 
 void handleClient(int clientSocket) {
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
+    int timeoutSeconds;
+    time_t startTime, currentTime;
 
-    // Receive the HTTP request from the client
-    ssize_t bytesRead = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
+    startTime = time(NULL);
 
-    if (bytesRead <= 0) {
-        fprintf(stderr, "Error receiving HTTP request\n");
-        close(clientSocket);
-        return;
+    // Check the number of active connections and set timeout accordingly
+    if (sharedData->activeConnections > 5) {
+        timeoutSeconds = MIN_TIMEOUT_SECONDS ;
+    } else {
+        timeoutSeconds = MAX_TIMEOUT_SECONDS ;
     }
 
-    // Print the received HTTP request
-    printf("Received HTTP request:\n%s\n", buffer);
 
-    char* request = buffer;
+    while(1) {
+        currentTime = time(NULL);    
 
-    // Extract the HTTP method (GET or POST), requested file, and Content-type
-    char method[5], filename[255], contentType[255];
-    sscanf(request, "%4s %254s", method, filename);
+        // Check for timeout before attempting to receive data
+        if (difftime(currentTime, startTime) > timeoutSeconds) {
+            printf("Timeout exceeded\n");
+            break;
+        }
 
-    // Extract Content-type if present
-    char* contentTypeHeader = strstr(request, "Content-Type: ");
-    if (contentTypeHeader != NULL) {
-        sscanf(contentTypeHeader, "Content-Type: %s", contentType);
-    }
+        fd_set readfds;
+        struct timeval timeout;
+        timeout.tv_sec = timeoutSeconds; // Set the timeout duration
+        timeout.tv_usec = 0;
 
-    if (strcmp(method, "GET") == 0) {
-        // Handle GET request as before
-        char fullFilePath[260];
-        snprintf(fullFilePath, sizeof(fullFilePath), "./%s", filename);
+        // Initialize the file descriptor set
+        FD_ZERO(&readfds);
+        FD_SET(clientSocket, &readfds);
+        
+        int activity = select(clientSocket + 1, &readfds, NULL, NULL, &timeout);
+        
+        if (activity == -1) {
+            perror("Select error");
+            break;
+        } else if (activity == 0) {
+            // No activity within the specified timeout
+            printf("No request received within the timeout\n");
+            continue; // Skip recv and continue waiting
+        }
 
-        FILE* file = fopen(fullFilePath, "rb");
-        if (file != NULL) {
-            // File exists, send HTTP 200 OK and the file content
-            char response[] = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n";
-            send(clientSocket, response, sizeof(response) - 1, 0);
+        char buffer[BUFFER_SIZE];
+        memset(buffer, 0, BUFFER_SIZE);
 
-            size_t bytesRead;
-            while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
-                send(clientSocket, buffer, bytesRead, 0);
+        ssize_t bytesRead = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
+
+        // Check if the client closed the connection or an error occurred
+        if (bytesRead <= 0) {
+            if (bytesRead == 0) {
+               continue;
+            } else {
+                perror("Error receiving HTTP request");
+            }
+            break;
+        }
+
+        buffer[bytesRead] = '\0';  // Null-terminate the received data
+        printf("Received HTTP request:\n%s\n", buffer);
+        char* request = buffer;
+
+        // Extract the HTTP method (GET or POST), requested file, and Content-type
+        char method[5], filename[255], contentType[255];
+        sscanf(request, "%4s %254s", method, filename);
+
+        // Extract Content-type if present
+        char* contentTypeHeader = strstr(request, "Content-Type: ");
+        if (contentTypeHeader != NULL) {
+            sscanf(contentTypeHeader, "Content-Type: %s", contentType);
+        }
+
+        if (strcmp(method, "GET") == 0) {
+            // Handle GET request as before
+            char fullFilePath[260];
+            snprintf(fullFilePath, sizeof(fullFilePath), "./%s", filename);
+
+            FILE* file = fopen(fullFilePath, "rb");
+            if (file != NULL) {
+                // File exists, send HTTP 200 OK and the file content
+                char response[] = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n";
+                send(clientSocket, response, sizeof(response) - 1, 0);
+
+                size_t bytesRead;
+                while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+                    send(clientSocket, buffer, bytesRead, 0);
+                }
+
+                fclose(file);
+            } else {
+                // File not found, send HTTP 404 Not Found
+                printf("Requested File: %s\n", fullFilePath);
+                char response[] = "HTTP/1.1 404 Not Found\r\nConnection: keep-alive\r\n\r\n";
+                send(clientSocket, response, sizeof(response) - 1, 0);
+            }
+        } else if (strcmp(method, "POST") == 0) {
+            // Handle POST request
+            // Parse the HTTP headers to find Content-Length
+            size_t contentLength = 0;
+            char* contentLengthHeader = strstr(request, "Content-Length: ");
+            if (contentLengthHeader != NULL) {
+                sscanf(contentLengthHeader, "Content-Length: %zu", &contentLength);
             }
 
-            fclose(file);
-        } else {
-            // File not found, send HTTP 404 Not Found
-            printf("Requested File: %s\n", fullFilePath);
-            char response[] = "HTTP/1.1 404 Not Found\r\nConnection: keep-alive\r\n\r\n";
-            send(clientSocket, response, sizeof(response) - 1, 0);
-        }
-    } else if (strcmp(method, "POST") == 0) {
-        // Handle POST request
-        // Parse the HTTP headers to find Content-Length
-        size_t contentLength = 0;
-        char* contentLengthHeader = strstr(request, "Content-Length: ");
-        if (contentLengthHeader != NULL) {
-            sscanf(contentLengthHeader, "Content-Length: %zu", &contentLength);
+            // Find the start of the request body
+            char* requestBody = strstr(request, "\r\n\r\n");
+            if (requestBody != NULL) {
+                // Move to the beginning of the body
+                requestBody += 4;
+
+                // Save the request body to a file
+                saveDataToFile(clientSocket, filename, contentLength, requestBody, contentType);
+            } else {
+                // Invalid POST request, missing request body
+                fprintf(stderr, "Invalid POST request: missing request body\n");
+            }
         }
 
-        // Find the start of the request body
-        char* requestBody = strstr(request, "\r\n\r\n");
-        if (requestBody != NULL) {
-            // Move to the beginning of the body
-            requestBody += 4;
-
-            // Save the request body to a file
-            saveDataToFile(clientSocket, filename, contentLength, requestBody, contentType);
-        } else {
-            // Invalid POST request, missing request body
-            fprintf(stderr, "Invalid POST request: missing request body\n");
-        }
     }
-
     // Close the client socket
     close(clientSocket);
 }
@@ -129,56 +196,9 @@ const char* getContentType(const char* filename) {
     return "text/plain";
 }
 
-// int main(int argc, char *argv[]) {
-//     if (argc != 2) {
-//         fprintf(stderr, "Usage: %s port_number\n", argv[0]);
-//         return 1;
-//     }
-
-//     int port = atoi(argv[1]);
-
-//     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-//     if (serverSocket == -1) {
-//         fprintf(stderr, "Error creating socket\n");
-//         return 1;
-//     }
-
-//     struct sockaddr_in serverAddr;
-//     serverAddr.sin_family = AF_INET;
-//     serverAddr.sin_addr.s_addr = INADDR_ANY;
-//     serverAddr.sin_port = htons(port);
-
-//     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
-//         fprintf(stderr, "Error binding socket\n");
-//         return 1;
-//     }
-
-//     if (listen(serverSocket, 10) == -1) {
-//         fprintf(stderr, "Error listening on socket\n");
-//         return 1;
-//     }
-
-//     printf("Server listening on port %d...\n", port);
-
-//     while (1) {
-//         struct sockaddr_in clientAddr;
-//         socklen_t clientAddrLen = sizeof(clientAddr);
-//         int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
-//         if (clientSocket == -1) {
-//             fprintf(stderr, "Error accepting connection\n");
-//             continue;
-//         }
-
-//         handleClient(clientSocket);
-
-//     }
-
-//     close(serverSocket);
-
-//     return 0;
-// }
 
 int main(int argc, char *argv[]) {
+
     if (argc != 2) {
         fprintf(stderr, "Usage: %s port_number\n", argv[0]);
         return 1;
@@ -209,6 +229,27 @@ int main(int argc, char *argv[]) {
 
     printf("Server listening on port %d...\n", port);
 
+   // Create a shared memory object
+    int shm_fd = shm_open("/shared_data", O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+    if (shm_fd == -1) {
+        perror("Error creating shared memory");
+        return 1;
+    }
+
+    // Set the size of the shared memory object
+    if (ftruncate(shm_fd, sizeof(struct SharedData)) == -1) {
+        perror("Error setting the size of shared memory");
+        return 1;
+    }
+
+    // Map the shared memory object
+    sharedData = (struct SharedData*)mmap(NULL, sizeof(struct SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (sharedData == MAP_FAILED) {
+        perror("Error mapping shared memory");
+        return 1;
+    }
+    atexit(cleanup);
+    
     while (1) {
         struct sockaddr_in clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
@@ -226,12 +267,18 @@ int main(int argc, char *argv[]) {
             continue;
         } else if (pid == 0) {
             // This is the child process
-            close(serverSocket);  // Close the server socket in the child process
+            // close(serverSocket);  // Close the server socket in the child process
+                // Increment the activeConnections counter
+            __sync_fetch_and_add(&sharedData->activeConnections, 1);
 
+            printf("___________CLIENT HERE\n");
+
+            // Handle the client in the child process
             handleClient(clientSocket);
 
-            // Close the client socket in the child process
-            close(clientSocket);
+          // Decrement the activeConnections counter in shared memory
+            decrementActiveConnections();
+          
 
             // Exit the child process
             exit(0);
@@ -239,9 +286,21 @@ int main(int argc, char *argv[]) {
             // This is the parent process
             close(clientSocket);  // Close the client socket in the parent process
         }
+          while (waitpid(-1, NULL, WNOHANG) > 0) {
+            // Do nothing
+        }
     }
-
+   // Unmap shared memory
+    cleanup();
     close(serverSocket);
 
     return 0;
+}
+void cleanup() {
+    // Unmap shared memory
+    if (sharedData != NULL && sharedData != MAP_FAILED) {
+        munmap(sharedData, sizeof(struct SharedData));
+    }
+    // Close shared memory object
+    shm_unlink("/shared_data");
 }

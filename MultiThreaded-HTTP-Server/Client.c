@@ -6,12 +6,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <stdbool.h> 
+#include <stdbool.h>
+#include <fcntl.h>
+
 
 #define BUFFER_SIZE 1024 * 500 * 8
-
-char request[BUFFER_SIZE];
-char response[BUFFER_SIZE];
 
 
 void DieWithSystemMessage(const char *msg) {
@@ -31,7 +30,6 @@ int parseCommand(const char *line, char *method, char *path, char *host, int *po
     // Assuming the format in input.txt is "method path host"
     return sscanf(line, "%19s %255s %255s %d", method, path, host, port_number);
 }
-
 
 int connectToServer(const char *host, int port_number) {
     // Create socket using socket()
@@ -56,6 +54,13 @@ int connectToServer(const char *host, int port_number) {
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         close(sockfd);
         DieWithSystemMessage("ERROR connecting");
+    }
+
+    // Set the socket to non-blocking mode
+    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK) < 0) {
+        // Handle error in setting socket to non-blocking mode
+        close(sockfd);
+        DieWithSystemMessage("ERROR setting socket to non-blocking");
     }
 
     return sockfd;
@@ -173,7 +178,6 @@ void saveResponseToFile(const char *response, int total_received, const char *fi
     }
 }
 
-
 void handleGET(int sockfd, const char *path, const char *host) {
     char request[BUFFER_SIZE];
     char response[BUFFER_SIZE];
@@ -183,21 +187,29 @@ void handleGET(int sockfd, const char *path, const char *host) {
 
     // Create HTTP GET request
     snprintf(request, BUFFER_SIZE, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Keep-Alive\r\n\r\n", path, host);
+    printf("________________________\n%s\n", request);
     
     if (send(sockfd, request, strlen(request), 0) < 0) {
         DieWithSystemMessage("Send error");
     }
+    printf("Request Sent\n");
 
     // Receive response in a loop to handle large responses
     memset(response, 0, BUFFER_SIZE);
     int total_received = 0;
     ssize_t n;
+
     while ((n = recv(sockfd, response + total_received, BUFFER_SIZE - total_received - 1, 0)) > 0) {
+        printf("REVIEVING...");
         total_received += n;
     }
+    
+    printf("Total received: %d\n", total_received);
 
     if (n < 0) {
-        DieWithSystemMessage("Receive error");
+        // DieWithSystemMessage("Receive error");
+        printf("%s\n", response);
+        return;
     }
 
     response[total_received] = '\0';  // Null-terminate the response
@@ -308,7 +320,8 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(method, "client_post") == 0) { // Changed to standard HTTP method
             handlePOST(sockfd, path, host);
         }
-        
+
+        sleep(2);  
     }
     close(sockfd);
 
