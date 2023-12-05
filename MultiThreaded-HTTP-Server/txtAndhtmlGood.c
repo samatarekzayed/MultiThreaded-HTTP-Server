@@ -8,8 +8,9 @@
 #include <netdb.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#define BUFFER_SIZE 1024 * 300 * 8
 
+
+#define BUFFER_SIZE 1024 * 300 * 8
 const char *getFileName(const char *path);
 
 
@@ -87,7 +88,7 @@ const char *getFileExtention(const char *str) {
     char*content_type = strstr(str, ".");
 
     if(content_type) {
-        if(strcmp(content_type, ".txt") == 0 || strcmp(content_type, ".html") == 0 || strcmp(content_type, ".jpeg") == 0 || strcmp(content_type, ".jpg") == 0 || strcmp(content_type, ".png") == 0) {
+        if(strcmp(content_type, ".txt") == 0 || strcmp(content_type, ".html") == 0 || strcmp(content_type, ".jpeg") == 0 || strcmp(content_type, ".jpg") == 0) {
             return content_type;
         } else {
             DieWithSystemMessage("Content type not supported");
@@ -126,7 +127,6 @@ void handleGET(int sockfd, const char *path, const char *host) {
     int total_received = 0;
 
     const char *filename = getFileName(path);
-    const char *fileExtention = strstr(path, ".");
     if (filename == NULL) {
         fprintf(stderr, "Error retrieving file name from path.\n");
         return;
@@ -135,35 +135,58 @@ void handleGET(int sockfd, const char *path, const char *host) {
     ssize_t bytesRead = recv(sockfd, response, BUFFER_SIZE - 1, 0);
     printf("request: %s\n", response);
 
-    if(strcmp(fileExtention, ".txt") == 0 || strcmp(fileExtention, ".html") == 0) {
-        char* requestBody = strstr(response, "\r\n\r\n");
-        if (requestBody != NULL) {
-            requestBody += 4;
-            // Save requestBody to a file
-            const char *filename = getFileName(path); // Make sure this function returns a valid path
-            FILE *file = fopen(filename, "wb"); // Open the file in binary write mode to preserve binary data if present
-            if (file != NULL) {
-                fwrite(requestBody, 1, strlen(requestBody), file);
-                fclose(file); // Close the file after writing
-                printf("Request body saved to %s\n", filename);
-            } else {
-                perror("Could not open file for writing");
-                // Handle the error, such as by returning or exiting.
-            }
-        }
-        printf("Request Body: %s\n", requestBody);
-    } else if(strcmp(fileExtention, ".jpeg") == 0 || strcmp(fileExtention, ".jpg") == 0 || strcmp(fileExtention, ".png")) {
-        const char *filename = getFileName(path); // Ensure this function returns a valid path
+    char* requestBody = strstr(response, "\r\n\r\n");
+    if (requestBody != NULL) {
+        requestBody += 4;
+        // Save requestBody to a file
+        const char *filename = getFileName(path); // Make sure this function returns a valid path
         FILE *file = fopen(filename, "wb"); // Open the file in binary write mode to preserve binary data if present
-            if (file != NULL) {
-                size_t bytesWritten = fwrite(response, 1, bytesRead, file);
-                fclose(file); // Close the file after writing
-                printf("Request body saved to %s\n", filename);
-            } else {
-                perror("Could not open file for writing");
-                // Handle the error, such as by returning or exiting.
-            }
+        if (file != NULL) {
+            fwrite(requestBody, 1, strlen(requestBody), file);
+            fclose(file); // Close the file after writing
+            printf("Request body saved to %s\n", filename);
+        } else {
+            perror("Could not open file for writing");
+            // Handle the error, such as by returning or exiting.
+        }
     }
+
+    printf("Request Body: %s\n", requestBody);
+
+    // FILE *image = fopen(filename, "wb");
+    // if (image == NULL) {
+    //     perror("Error in creating file");
+    //     return;
+    // }
+
+    // total_received += bytesRead;
+    // // saveResponseToFile(response, total_received, path);
+    // fwrite(response, 1, bytesRead, image);
+
+    // fclose(image);
+
+    // FILE *image = fopen(filename, "wb");
+    // if (image == NULL) {
+    //     perror("Error in creating file");
+    //     return;
+    // }
+
+   
+    // n = recv(sockfd, response, BUFFER_SIZE, 0);
+    // if (n > 0) {
+    //     // fwrite(response, 1, n, image);
+    //     total_received += n;
+    //     saveResponseToFile(response, total_received, path);
+    // } else if (n == 0) {
+    //     // The other side has closed the connection
+    //     printf("Connection closed by peer.\n");
+    // } else {
+    //     // An error has occurred
+    //     printf("Receive failed");
+    //     fclose(image);
+    //     return;
+    // }
+    // fclose(image);
 
     printf("Total received: %d bytes\n", total_received);
 
@@ -172,9 +195,6 @@ void handleGET(int sockfd, const char *path, const char *host) {
 
 void handlePOST(int sockfd, const char *path, const char *host) {
     printf("Handling POST request\n");
-    
-    char request[BUFFER_SIZE];
-    char response[BUFFER_SIZE];
 
     // Open the text file in read mode
     FILE *file = fopen("index.html", "rb");
@@ -207,6 +227,9 @@ void handlePOST(int sockfd, const char *path, const char *host) {
 
     fclose(file); // Close the text file after reading
 
+    char request[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+
     // Content-Type handling based on file extension or specific conditions
     const char *contentType = "application/octet-stream"; // Default content type (binary/octet-stream)
 
@@ -233,9 +256,8 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     memset(response, 0, BUFFER_SIZE);
     ssize_t n;
     
-    while ((n = recv(sockfd, response, BUFFER_SIZE, 0)) > 0) {
+    while ((n = recv(sockfd, response, BUFFER_SIZE - 1, 0)) > 0) {
         response[n] = '\0'; // Null-terminate the response
-        printf("..........\n");
     }
 
     printf("Response:\n%s\n", response);
@@ -270,6 +292,7 @@ int main(int argc, char *argv[]) {
             handlePOST(sockfd, path, host);
         }
 
+        sleep(2);  
     }
     close(sockfd);
 

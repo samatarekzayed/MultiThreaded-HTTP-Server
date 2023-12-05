@@ -12,11 +12,12 @@
 #include <sys/wait.h> 
 #include <sys/mman.h>
 #include <time.h>
+#include <math.h>
 
 #define TARGET_LOAD_THRESHOLD 1.0
-#define MAX_TIMEOUT_SECONDS 20
-#define MIN_TIMEOUT_SECONDS 5
-#define BUFFER_SIZE 1024 * 500 * 8
+#define MAX_TIMEOUT_SECONDS 150
+#define MIN_TIMEOUT_SECONDS 50
+#define BUFFER_SIZE 1024 * 200 * 8
 
 // Function prototypes
 volatile int activeConnections = 0;
@@ -45,11 +46,14 @@ void handleClient(int clientSocket) {
 
     startTime = time(NULL);
 
-    // Check the number of active connections and set timeout accordingly
     if (sharedData->activeConnections > 5) {
-        timeoutSeconds = MIN_TIMEOUT_SECONDS ;
+        // Adjust the timeout based on the number of active connections using an exponential function
+        timeoutSeconds = (int)(MAX_TIMEOUT_SECONDS * exp((sharedData->activeConnections - 5) * 0.1));
+        if (timeoutSeconds > MAX_TIMEOUT_SECONDS) {
+            timeoutSeconds = MAX_TIMEOUT_SECONDS;
+        }
     } else {
-        timeoutSeconds = MAX_TIMEOUT_SECONDS ;
+        timeoutSeconds = MIN_TIMEOUT_SECONDS;
     }
 
 
@@ -83,7 +87,7 @@ void handleClient(int clientSocket) {
         }
 
         char buffer[BUFFER_SIZE];
-        memset(buffer, 0, BUFFER_SIZE);
+        // memset(buffer, 0, BUFFER_SIZE);
 
         ssize_t bytesRead = recv(clientSocket, buffer, BUFFER_SIZE - 1, 0);
 
@@ -119,14 +123,34 @@ void handleClient(int clientSocket) {
             FILE* file = fopen(fullFilePath, "rb");
             if (file != NULL) {
                 // File exists, send HTTP 200 OK and the file content
-                char response[] = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n";
-                send(clientSocket, response, sizeof(response) - 1, 0);
+                if(strcmp(strstr(filename, "."), ".txt")  == 0 || strcmp(strstr(filename, "."), ".html") == 0) {
+                    char response[] = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n";
+                    send(clientSocket, response, sizeof(response) - 1, 0);
+                    printf(".............\n");
+                }
+                // }
+                
+                // size_t bytesRead;
+                // while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+                //     send(clientSocket, buffer, bytesRead, 0);
+                // }
 
+                // fclose(file);
                 size_t bytesRead;
                 while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
-                    send(clientSocket, buffer, bytesRead, 0);
+                    ssize_t bytesSent = send(clientSocket, buffer, bytesRead, 0);
+                    if (bytesSent <= 0) {
+                        perror("Error sending data");
+                        break;
+                    }
                 }
 
+
+                if (ferror(file)) {
+                    perror("Error reading file");
+                }
+
+                // Close the file after sending
                 fclose(file);
             } else {
                 // File not found, send HTTP 404 Not Found
@@ -151,13 +175,18 @@ void handleClient(int clientSocket) {
 
                 // Save the request body to a file
                 saveDataToFile(clientSocket, filename, contentLength, requestBody, contentType);
+                
             } else {
                 // Invalid POST request, missing request body
                 fprintf(stderr, "Invalid POST request: missing request body\n");
             }
         }
 
+        
+        memset(buffer, 0, BUFFER_SIZE);
+
     }
+
     // Close the client socket
     close(clientSocket);
 }
@@ -211,6 +240,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error creating socket\n");
         return 1;
     }
+    int reuse = 1;
+if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    perror("Error setting socket options");
+    return 1;
+}
 
     struct sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
@@ -271,7 +305,7 @@ int main(int argc, char *argv[]) {
                 // Increment the activeConnections counter
             __sync_fetch_and_add(&sharedData->activeConnections, 1);
 
-            printf("___________CLIENT HERE\n");
+            printf("_____CLIENT HERE\n");
 
             // Handle the client in the child process
             handleClient(clientSocket);

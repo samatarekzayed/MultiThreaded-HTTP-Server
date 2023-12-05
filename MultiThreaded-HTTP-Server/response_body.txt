@@ -21,3 +21,22 @@
 
     /////////////////////////////////////
     
+
+
+    strcat(response, "\r\n");
+                size_t size = strlen(response);
+                size_t available = BUFFER_SIZE - size;
+                char buffer[available];
+
+                size_t bytesRead;
+                printf("Before\n");
+                if ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+                    // send(clientSocket, buffer, bytesRead, 0);
+                    // printf("Sent\n");
+                    size_t response_length = strlen(response);
+                    memcpy(response + response_length, buffer, bytesRead);
+                    response_length += bytesRead;
+                    send(clientSocket, buffer, response_length, 0);
+                    printf("SENT\n");
+                }
+                printf("After\n");

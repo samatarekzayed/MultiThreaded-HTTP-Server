@@ -87,7 +87,7 @@ const char *getFileExtention(const char *str) {
     char*content_type = strstr(str, ".");
 
     if(content_type) {
-        if(strcmp(content_type, ".txt") == 0 || strcmp(content_type, ".html") == 0 || strcmp(content_type, ".jpeg") == 0 || strcmp(content_type, ".jpg") == 0 || strcmp(content_type, ".png") == 0) {
+        if(strcmp(content_type, ".txt") == 0 || strcmp(content_type, ".html") == 0 || strcmp(content_type, ".jpeg") == 0 || strcmp(content_type, ".jpg") == 0) {
             return content_type;
         } else {
             DieWithSystemMessage("Content type not supported");
@@ -126,7 +126,7 @@ void handleGET(int sockfd, const char *path, const char *host) {
     int total_received = 0;
 
     const char *filename = getFileName(path);
-    const char *fileExtention = strstr(path, ".");
+    const char *fileExtention = getFileExtention(path);
     if (filename == NULL) {
         fprintf(stderr, "Error retrieving file name from path.\n");
         return;
@@ -154,7 +154,7 @@ void handleGET(int sockfd, const char *path, const char *host) {
         printf("Request Body: %s\n", requestBody);
     } else if(strcmp(fileExtention, ".jpeg") == 0 || strcmp(fileExtention, ".jpg") == 0 || strcmp(fileExtention, ".png")) {
         const char *filename = getFileName(path); // Ensure this function returns a valid path
-        FILE *file = fopen(filename, "wb"); // Open the file in binary write mode to preserve binary data if present
+        FILE *file = fopen("image.jpeg", "wb"); // Open the file in binary write mode to preserve binary data if present
             if (file != NULL) {
                 size_t bytesWritten = fwrite(response, 1, bytesRead, file);
                 fclose(file); // Close the file after writing
@@ -177,7 +177,7 @@ void handlePOST(int sockfd, const char *path, const char *host) {
     char response[BUFFER_SIZE];
 
     // Open the text file in read mode
-    FILE *file = fopen("index.html", "rb");
+    FILE *file = fopen("images.jpeg", "rb");
     if (file == NULL) {
         perror("Error opening input text file");
         return;
