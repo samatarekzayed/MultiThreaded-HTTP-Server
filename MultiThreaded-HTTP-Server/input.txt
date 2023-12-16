@@ -1,3 +1,0 @@
-client_get /index.html 127.0.0.1
-client_get /test.jpeg 127.0.0.1
-client_get /images.jpeg 127.0.0.1

@@ -175,7 +175,7 @@ void handleClient(int clientSocket) {
 
                 // Save the request body to a file
                 saveDataToFile(clientSocket, filename, contentLength, requestBody, contentType);
-                
+                printf("NAMEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE: %s\n", filename);
             } else {
                 // Invalid POST request, missing request body
                 fprintf(stderr, "Invalid POST request: missing request body\n");
